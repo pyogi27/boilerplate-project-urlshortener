@@ -1,9 +1,15 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const dns = require('dns');
+const bodyParser = require('body-parser');
 const app = express();
-app.use(express.urlencoded({ extended: true })); // for parsing application/x-www-form-urlencoded
+
+app.use(cors());
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.json());
 app.use(express.static('public'));
+
 // Basic Configuration
 const port = process.env.PORT || 3000;
 
@@ -20,31 +26,42 @@ app.get('/api/hello', function (req, res) {
   res.json({ greeting: 'hello API' });
 });
 
-const urlDatabase = {};
-let urlIndex = 0;
+let urls = {};
+let shortUrlIndex = 1;
 
 app.post('/api/shorturl', (req, res) => {
-  const originalURL = req.body.url;
-  const urlPattern = /^https?:\/\/(.+)/i;
-  if (!urlPattern.test(originalURL)) {
-    return res.status(400).json({ error: 'invalid URL' });
+  const { url } = req.body;
+  const urlRegex = /^(http|https):\/\/[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,5}(:[0-9]{1,5})?(\/.*)?$/i;
+
+  if (!urlRegex.test(url)) {
+    return res.json({ error: 'invalid url' });
   }
 
-  urlIndex++;
-  const shortUrl = `http://localhost:${port}/api/shorturl/${urlIndex}`;
-  urlDatabase[urlIndex] = originalURL;
-  res.json({ original_url: originalURL, short_url: shortUrl });
+  dns.lookup(new URL(url).hostname, (err) => {
+    if (err) {
+      return res.json({ error: 'invalid url' });
+    }
+
+    const shortUrl = shortUrlIndex++;
+    urls[shortUrl] = url;
+    res.json({
+      original_url: url,
+      short_url: shortUrl
+    });
+  });
 });
 
-app.get('/api/shorturl/:short_url', (req, res) => {
-  const shortUrlCode = req.params.short_url;
-  const originalUrl = urlDatabase[shortUrlCode];
+app.get('/api/shorturl/:shortUrl', (req, res) => {
+  const shortUrl = req.params.shortUrl;
+  const originalUrl = urls[shortUrl];
+
   if (originalUrl) {
     res.redirect(originalUrl);
   } else {
-    res.status(404).send('No URL found');
+    res.json({ error: "No URL found for this link" });
   }
 });
+
 
 app.listen(port, function () {
   console.log(`Listening on port ${port}`);
